@@ -1,0 +1,9 @@
+*llm_weights/
+
+data/
+
+*.zip
+
+gpu_map.md
+
+__pycache__/
