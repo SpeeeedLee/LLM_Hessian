@@ -8,7 +8,7 @@ from data import get_cached_wikitext2
 
 from torch.autograd.functional import _as_tuple, _grad_preprocess, _validate_v, _check_requires_grad, _autograd_grad, \
     _fill_in_zeros, _grad_postprocess, _tuple_postprocess
-from peft import LoraConfig, get_peft_model, TaskType, PeftModel
+
 
 def sample_vhp_for_hessian_diagonal_estimation(func, inputs, vhp_samples, create_graph=False, strict=False, update_callback=None):
     with torch.enable_grad():
@@ -66,14 +66,13 @@ def sample_vhp_for_hessian_diagonal_estimation(func, inputs, vhp_samples, create
     return diag_estimate
 
 
-def compute_hessian_diag_hutchinson(model_name, layer_name, block_index, model_input_bs, seqlen, b, vhp_samples, seed, cache_dir, peft_config=None):
+def compute_hessian_diag_hutchinson(model_name, layer_name, block_index, model_input_bs, seqlen, b, vhp_samples, seed, cache_dir):
     set_seed(seed)
 
     disable_non_differential_modules()
 
-    model, tokenizer = get_llm(model_name, cache_dir, peft_config)
+    model, tokenizer = get_llm(model_name, cache_dir)
     device = torch.device("cuda:0")
-    print(model)
 
     # Get the test loader
     _, testloader = get_cached_wikitext2(tokenizer=tokenizer, seqlen=seqlen, seed=seed)
@@ -186,72 +185,17 @@ if __name__ == '__main__':
     parser.add_argument("--seqlen", type=int, default=2048)
     parser.add_argument("--seed", type=int, default=0)
     parser.add_argument("--cache_dir", type=str, default="llm_weights")
-    parser.add_argument("--peft", type=str, default=None)
-    parser.add_argument("--rank", type=int, default=8)
-    # parser.add_argument("--target_modules", type=str, default=8)
-
     args = parser.parse_args()
 
     check_gpus()
-
-    if args.peft is not None:
-        if args.model == 'facebook/opt-125m':
-            target_modules = "q_proj,k_proj,v_proj,out_proj,fc1,fc2"
-        else:
-            raise NotImplementedError(f"PEFT target modules for model {args.model} not specified")
-        if args.peft.lower() == 'lora':
-            print('Loading LoRA config...')
-            peft_config = LoraConfig(
-                task_type=TaskType.CAUSAL_LM,
-                target_modules=target_modules.split(','),
-                inference_mode=False,
-                r=args.rank,
-                lora_alpha=args.rank,
-                lora_dropout=0.0,
-                init_lora_weights=True
-            )
-        elif args.peft.lower() == 'pissa':
-            print('Loading PiSSA config...')
-            peft_config = LoraConfig(
-                task_type=TaskType.CAUSAL_LM,
-                target_modules=target_modules.split(','),
-                inference_mode=False,
-                r=args.rank,
-                lora_alpha=args.rank,
-                lora_dropout=0.0,
-                init_lora_weights='pissa_niter_16'
-            )
-        elif args.peft.lower() == 'milora':
-            need to write here (perhaps we can also change the pissa to see whether tow ways of calculating pissa can produce similar hessians)
-            print(f"Initilize PiSSA/MiLoRA adapters from xxx. (Deterministic)")
-            model = PeftModel.from_pretrained(model, script_args.model_name_or_path, subfolder = script_args.adapter_name_or_path, is_trainable=True)
-            print('Loading MiLoRA config...')
-            peft_config = LoraConfig(
-                task_type=TaskType.CAUSAL_LM,
-                target_modules=target_modules.split(','),
-                inference_mode=False,
-                r=args.rank,
-                lora_alpha=args.rank,
-                lora_dropout=0.0,
-                init_lora_weights='pissa_niter_16'
-            )
-        else:
-            raise NotImplementedError(f"PEFT method {args.peft} not implemented")
-    else:
-        lora_config = None
 
     start_t = time.perf_counter()
     hess_diag = compute_hessian_diag_hutchinson(model_name=args.model, layer_name=args.layer_name,
                                                 vhp_samples=args.vhp_samples, block_index=args.block_index,
                                                 b=args.b, model_input_bs=args.model_input_bs, seqlen=args.seqlen,
-                                                seed=args.seed, cache_dir=args.cache_dir, 
-                                                peft_config=peft_config)
+                                                seed=args.seed, cache_dir=args.cache_dir)
     print("Computation time =", time.perf_counter() - start_t)
 
-    if args.peft is not None:
-        out_path_prefix = "data/" + args.model + "/diag_hessian/hessian_diag_" + args.layer_name + "_block" + str(args.block_index) + "_vhp_samples" + str(args.vhp_samples) + "_b" + str(args.b) + "_peft_" + args.peft + "_rank" + str(args.rank) + "_seed" + str(args.seed)
-    else:
-        out_path_prefix = "data/" + args.model + "/diag_hessian/hessian_diag_" + args.peft + "_r" + args.rank + args.layer_name + "_block" + str(args.block_index) + "_vhp_samples" + str(args.vhp_samples) + "_b" + str(args.b) + "_seed" + str(args.seed)
-    # plot_heatmap(torch.abs(hess_diag), out_path_prefix + '.pdf')
-    plot_heatmap(torch.abs(hess_diag), out_path_prefix + '.png')
+    out_path_prefix = "data/" + args.model + "/diag_hessian/hessian_diag_" + args.layer_name + "_block" + str(args.block_index) + "_vhp_samples" + str(args.vhp_samples) + "_b" + str(args.b) + "_seed" + str(args.seed)
+    plot_heatmap(torch.abs(hess_diag), out_path_prefix + '.pdf')
     torch.save(hess_diag, out_path_prefix + ".pt")

@@ -8,6 +8,8 @@ from torch import nn
 from importlib.metadata import version
 from mpl_toolkits.axes_grid1 import make_axes_locatable
 from transformers import AutoTokenizer, AutoModelForCausalLM
+from peft import LoraConfig, get_peft_model, TaskType, PeftModel
+
 
 
 def draw_progress_bar(current, total, bar_length=30, prefix="Progress"):
@@ -35,15 +37,17 @@ def set_seed(seed):
     torch.random.manual_seed(seed)
 
 
-def get_llm(model_name, cache_dir="llm_weights", device=None):
+def get_llm(model_name, cache_dir="llm_weights", peft_config=None):
     model = AutoModelForCausalLM.from_pretrained(
         model_name,
         torch_dtype=torch.float32,
         cache_dir=cache_dir,
         low_cpu_mem_usage=True,
-        # device_map="auto"
+        device_map="auto"
     )
-    model.to(device=device)
+    if peft_config is not None:
+        print('Loding PEFT modules...')
+        model = get_peft_model(model, peft_config)
     model.seqlen = model.config.max_position_embeddings
     model.eval()
 
@@ -56,12 +60,22 @@ def get_llm(model_name, cache_dir="llm_weights", device=None):
     return model, tokenizer
 
 
-def get_all_blocks(model):
-    if "opt" not in model.name_or_path:
-        return model.model.layers
-    else:
-        return model.model.decoder.layers
+# def get_all_blocks(model):
+#     if "opt" not in model.name_or_path:
+#         return model.model.layers
+#     else:
+#         return model.model.decoder.layers
 
+def get_all_blocks(model):
+    # 檢查是否為 PeftModel，如果是則解包出底層模型
+    if isinstance(model, PeftModel):
+        model = model.base_model.model
+
+    if "opt" in model.name_or_path.lower(): # 建議轉小寫判斷
+        return model.model.decoder.layers
+    else:
+        return model.model.layers
+    
 
 def find_layers(block, layers=[nn.Linear], name=''):
     """
@@ -184,7 +198,8 @@ def plot_heatmap(tensor, out_path="heatmap_hessian.pdf"):
     ax.set_ylabel('Rows')
     plt.tight_layout(pad=0)
 
-    plt.savefig(out_path, format='pdf', dpi=100)
+    # plt.savefig(out_path, format='pdf', dpi=100)
+    plt.savefig(out_path, format='png', dpi=300)
     plt.close()
 
 

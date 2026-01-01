@@ -8,16 +8,15 @@ from utils import *
 from data import get_cached_wikitext2
 
 
-def compute_hessian_single_layer_single_block(model_name, layer_name, block_index, t, b, model_input_bs, seqlen, seed, cache_dir, device=None):
+def compute_hessian_single_layer_single_block(model_name, layer_name, block_index, t, b, model_input_bs, seqlen, seed, cache_dir):
     # Setting seeds for reproducibility
     set_seed(seed)
 
     disable_non_differential_modules()
 
-    # device = torch.device("cuda:0")
-    print(f'Model loaded on device: {device}')
-    model, tokenizer = get_llm(model_name, cache_dir, device=device)
-    
+    model, tokenizer = get_llm(model_name, cache_dir)
+    device = torch.device("cuda:0")
+
     # Get the test loader
     _, testloader = get_cached_wikitext2(tokenizer=tokenizer, seqlen=seqlen, seed=seed)
 
@@ -86,7 +85,6 @@ if __name__ == '__main__':
     parser.add_argument("--seqlen", type=int, default=2048)
     parser.add_argument("--seed", type=int, default=0)
     parser.add_argument("--cache_dir", type=str, default="llm_weights")
-    parser.add_argument("--device", type=str, default="cuda:0")
     args = parser.parse_args()
 
     check_gpus()
@@ -96,9 +94,7 @@ if __name__ == '__main__':
     hess = compute_hessian_single_layer_single_block(model_name=args.model, layer_name=args.layer_name,
                                                      block_index=args.block_index, t=args.t, b=args.b,
                                                      model_input_bs=args.model_input_bs, seqlen=args.seqlen,
-                                                     seed=args.seed, cache_dir=args.cache_dir, 
-                                                     device=args.device)
-    
+                                                     seed=args.seed, cache_dir=args.cache_dir)
     print("Computation time =", time.perf_counter() - start_t)
 
     # Computation time = 29338.510749154957 sec
